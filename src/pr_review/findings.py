@@ -7,6 +7,8 @@ at, so after new commits only areas whose code changed need another look.
 
 from __future__ import annotations
 
+import json
+import re
 from datetime import datetime, timezone
 
 from pr_review import derive
@@ -59,6 +61,8 @@ def normalize(item: dict, review: dict, index: int = 0) -> dict:
     if item.get("suggestion"):
         out["suggestion"] = str(item["suggestion"]).strip()
     out["source"] = str(item.get("source") or "claude")
+    if item.get("category"):
+        out["category"] = str(item["category"])[:40]
     return out
 
 
@@ -170,3 +174,154 @@ def carry_over(old: dict, new: dict) -> int:
         new["summary"] = old["summary"]
         new["findings"] = old.get("findings", [])
     return kept
+
+
+# ---------------------------------------------------------------- importing
+
+_SEVERITY_MAP = {
+    # Claude Code's findings list (ReportFindings)
+    "important": "high", "pre_existing": "low", "nit": "info",
+    # common words in reviews
+    "critical": "high", "blocker": "high", "major": "high", "error": "high",
+    "warning": "medium", "minor": "low", "suggestion": "low", "note": "info", "optional": "info",
+    "high": "high", "medium": "medium", "low": "low", "info": "info",
+}
+_VERDICT_CONFIDENCE = {"confirmed": "high", "plausible": "medium"}
+_LOC = re.compile(r"`?(/?(?:[\w.\-]+/)*[\w.\-]+\.[A-Za-z0-9]{1,8}):(\d+)(?:[-–]\d+)?`?")
+_FENCED_JSON = re.compile(r"```(?:json)?\s*(\[.*?\]|\{.*?\})\s*```", re.S)
+_ITEM_START = re.compile(r"^\s*(?:\d+[.)]|[-*•]|#{2,4})\s+")
+
+
+def _guess_severity(text: str) -> str:
+    t = text.lower()
+    if re.search(r"\b(nit|style|optional|cosmetic)\b", t):
+        return "info"
+    if re.search(r"\bpre-?existing\b", t):
+        return "low"
+    if re.search(r"\b(critical|security|vulnerab|crash|data loss|injection|secret|credential|password|api key|"
+                 r"token|raises|exception|typeerror|"
+                 r"attributeerror|importerror|will fail|breaks?)\b", t):
+        return "high"
+    return "medium"
+
+
+def _from_structured(item: dict) -> dict:
+    """One finding from our format or from Claude Code's findings list."""
+    sev = str(item.get("severity") or "").lower()
+    text = " ".join(str(item.get(k) or "") for k in ("title", "summary", "short_summary", "failure_scenario"))
+    out = {
+        "severity": _SEVERITY_MAP.get(sev) or _guess_severity(text),
+        "title": item.get("title") or item.get("short_summary") or item.get("summary") or "",
+        "file": item.get("file") or item.get("path"),
+        "line": item.get("line"),
+        "source": "code-review",
+    }
+    detail = [str(item[k]) for k in ("detail", "summary", "failure_scenario") if item.get(k) and item[k] != out["title"]]
+    if detail:
+        out["detail"] = " ".join(detail)
+    verdict = str(item.get("verdict") or "").lower()
+    out["confidence"] = item.get("confidence") or _VERDICT_CONFIDENCE.get(verdict) or "medium"
+    if item.get("suggestion"):
+        out["suggestion"] = item["suggestion"]
+    if item.get("category"):
+        out["category"] = str(item["category"])
+    return out
+
+
+def _from_text(text: str) -> list[dict]:
+    """Findings from a review written as prose: one per list item or heading
+    that names a `path:line`."""
+    blocks, cur = [], []
+    for line in text.splitlines():
+        if _ITEM_START.match(line) and cur:
+            blocks.append(cur)
+            cur = []
+        if line.strip():
+            cur.append(line)
+    if cur:
+        blocks.append(cur)
+    out = []
+    for b in blocks:
+        joined = "\n".join(b)
+        m = _LOC.search(joined)
+        if not m:
+            continue
+        first = _ITEM_START.sub("", b[0]).strip().strip("*").strip()
+        first = _LOC.sub("", first).strip(" -:—`*") or "Finding"
+        rest = " ".join(x.strip() for x in b[1:]).strip()
+        out.append({"severity": _guess_severity(joined), "title": first[:200], "detail": rest or None,
+                    "file": m.group(1), "line": int(m.group(2)), "confidence": "medium", "source": "code-review"})
+    return out
+
+
+def parse_external(raw: str) -> list[dict]:
+    """Findings from whatever a review tool printed: our JSON, Claude Code's
+    findings list, a `claude -p --output-format json` envelope, or prose."""
+    raw = raw.strip()
+    if not raw:
+        return []
+    data = None
+    try:
+        data = json.loads(raw)
+    except ValueError:
+        pass
+    if isinstance(data, dict) and isinstance(data.get("result"), str) and "findings" not in data:
+        return parse_external(data["result"])  # claude -p envelope
+    if data is None:
+        m = _FENCED_JSON.search(raw)
+        if m:
+            try:
+                data = json.loads(m.group(1))
+            except ValueError:
+                data = None
+    if isinstance(data, dict):
+        data = data.get("findings", [])
+    if isinstance(data, list):
+        return [_from_structured(x) for x in data if isinstance(x, dict)]
+    return _from_text(raw)
+
+
+def _clean_path(review: dict, path: str | None) -> str | None:
+    if not path:
+        return None
+    root = (review["meta"].get("repo_path") or "").rstrip("/")
+    p = path.strip()
+    while p.startswith("./"):
+        p = p[2:]
+    if root and p.startswith(root + "/"):
+        p = p[len(root) + 1:]
+    if p.startswith(("a/", "b/")) and p[2:] in {f["path"] for f in review["files"]}:
+        p = p[2:]
+    return p
+
+
+def import_findings(review: dict, items: list[dict], areas: list[str] | None = None, keep: bool = False,
+                    summary: str | None = None) -> dict:
+    """Route findings to the areas their files belong to. Unlike `add`, bad
+    items are skipped and reported rather than rejecting the whole batch,
+    because the input comes from another tool's free-form output."""
+    files = {f["path"]: f for f in review["files"]}
+    known_areas = {c["id"] for c in review["clusters"]}
+    by_area: dict[str | None, list[dict]] = {}
+    skipped: list[str] = []
+    for i, item in enumerate(items):
+        item = dict(item)
+        item["file"] = _clean_path(review, item.get("file"))
+        try:
+            clean = normalize(item, review, i)
+        except FindingError as exc:
+            skipped.append(str(exc))
+            continue
+        f = files.get(clean.get("file"))
+        area = f.get("cluster") if f else None
+        by_area.setdefault(area if area in known_areas else None, []).append(clean)
+    marked = set(areas or []) | {a for a in by_area if a}
+    unknown = sorted(a for a in marked if a not in known_areas)
+    if unknown:
+        raise FindingError(f"no area {', '.join(unknown)}; have {', '.join(sorted(known_areas))}")
+    counts = {}
+    for a in sorted(marked):
+        counts[a] = add(review, by_area.get(a, []), cluster=a, replace=not keep)["added"]
+    if by_area.get(None) or summary is not None:
+        counts["PR"] = add(review, by_area.get(None, []), cluster=None, summary=summary, replace=False)["added"]
+    return {"imported": sum(counts.values()), "by_area": counts, "skipped": skipped}
