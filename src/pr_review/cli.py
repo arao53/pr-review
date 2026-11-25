@@ -322,6 +322,63 @@ def findings_add(source, area, pr_level, summary, keep, review_path):
     click.echo(msg + (" and its summary." if summary else "."))
 
 
+@findings_group.command("import")
+@click.argument("source", type=click.File("r"), default="-")
+@click.option("--areas", help="Comma-separated areas the review covered, e.g. c1,c3. They are marked as reviewed "
+                              "even if nothing was found in them.")
+@click.option("--keep", is_flag=True, help="Add to earlier findings instead of replacing them.")
+@click.option("--summary", help="PR-level summary to store with the import.")
+@click.option("--review", "review_path", type=click.Path(exists=True), help="review.json or its directory. Default: latest.")
+def findings_import(source, areas, keep, summary, review_path):
+    """Import findings from another review, such as Claude Code's /code-review.
+
+    SOURCE can be the output of `claude -p "/code-review ..." --output-format json`,
+    a JSON list of findings, or plain text that cites `path:line`. Findings
+    are routed to the area their file belongs to. Items that can't be placed
+    are skipped and listed, rather than failing the whole import.
+    """
+    from pr_review import findings
+    items = findings.parse_external(source.read())
+    path = _find_review(review_path)
+    review = report.load(path)
+    marked = [a.strip() for a in (areas or "").split(",") if a.strip()]
+    try:
+        res = findings.import_findings(review, items, areas=marked, keep=keep, summary=summary)
+    except findings.FindingError as exc:
+        raise click.ClickException(str(exc)) from exc
+    report.write(review, path.parent)
+    where = ", ".join(f"{k}: {v}" for k, v in res["by_area"].items()) or "nothing"
+    click.echo(f"Read {len(items)} finding(s); {res['imported']} new ({where}).")
+    for msg in res["skipped"]:
+        click.echo(f"  skipped {msg}")
+
+
+@main.command()
+@click.option("--review", "review_path", type=click.Path(exists=True), help="review.json or its directory. Default: latest.")
+@click.option("--mode", type=click.Choice(["single", "per-area"]), help="Force one pass or one pass per area.")
+@click.option("--effort", type=click.Choice(["low", "medium", "high", "xhigh", "max"]),
+              help="Effort for /code-review. Default follows the rigor: quick=low, standard=high, thorough=xhigh.")
+@click.option("--json", "as_json", is_flag=True)
+def plan(review_path, mode, effort, as_json):
+    """The /code-review commands to run for the areas that still need review."""
+    from pr_review import plan as plan_mod
+    p = plan_mod.build_plan(report.load(_find_review(review_path)), mode=mode, effort=effort)
+    if as_json:
+        click.echo(json.dumps(p, indent=2))
+        return
+    if p["mode"] == "nothing":
+        click.echo("Every close-read area already has an up-to-date review.")
+        return
+    click.echo(f"{len(p['areas'])} area(s), {p['close_read_lines']:,} close-read lines, effort {p['effort']}.")
+    if p["mode"] == "single":
+        click.echo("One pass over the whole change:\n  " + p["single_command"])
+    else:
+        click.echo("One pass per area, in this order:")
+        for a in p["areas"]:
+            click.echo(f"  {a['id']} {a['name']} ({a['lines']:,} lines)\n    {a['command']}")
+    click.echo(f"Then save the results with: {p['import_command']}")
+
+
 @main.command()
 @click.argument("number", type=int)
 @click.option("--repo", default=".", type=click.Path(exists=True, file_okay=False))

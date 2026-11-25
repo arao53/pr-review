@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "pr-review"
-version = "0.3.0"
+version = "0.4.0"
 description = "Triage, cluster and map large Python pull requests before you read them."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -17,7 +17,7 @@ dependencies = [
 
 [project.optional-dependencies]
 refine = ["jedi>=0.19"]
-app = ["marimo>=0.20", "altair>=5", "jedi>=0.19"]
+app = ["marimo>=0.20", "altair>=5", "pandas>=2", "jedi>=0.19"]
 dev = [
     "pytest>=7",
     "jsonschema>=4",
