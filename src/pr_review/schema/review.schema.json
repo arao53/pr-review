@@ -1,0 +1,1109 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/arao53/pr-review/schema/review.schema.json",
+  "title": "pr-review review file",
+  "description": "Output of `pr-review analyze`. The CLI fills everything except `summary` and the `findings` arrays, which a reviewer (human or Claude) adds later. Tiers, budget and caller flags can be recomputed from this file alone (pr_review.derive). Extra keys are allowed.",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "tool",
+    "meta",
+    "stats",
+    "files",
+    "clusters",
+    "collapsed",
+    "graph",
+    "gaps",
+    "findings",
+    "symbols",
+    "delta"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "1"
+    },
+    "tool": {
+      "type": "object",
+      "required": [
+        "name",
+        "version"
+      ],
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "version": {
+          "type": "string"
+        }
+      }
+    },
+    "meta": {
+      "type": "object",
+      "required": [
+        "repo",
+        "base",
+        "head",
+        "base_sha",
+        "head_sha",
+        "merge_base_sha",
+        "generated_at"
+      ],
+      "properties": {
+        "repo": {
+          "type": "string"
+        },
+        "base": {
+          "type": "string"
+        },
+        "head": {
+          "type": "string"
+        },
+        "base_sha": {
+          "type": "string"
+        },
+        "head_sha": {
+          "type": "string"
+        },
+        "merge_base_sha": {
+          "type": "string"
+        },
+        "generated_at": {
+          "type": "string"
+        },
+        "review_path": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "options": {
+          "type": "object"
+        }
+      }
+    },
+    "stats": {
+      "type": "object",
+      "required": [
+        "files_changed",
+        "reviewable_files",
+        "collapsed_files",
+        "lines_added",
+        "lines_removed",
+        "reviewable_lines",
+        "clusters"
+      ],
+      "properties": {
+        "files_changed": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "reviewable_files": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "collapsed_files": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "lines_added": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "lines_removed": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "reviewable_lines": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "clusters": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "parse_errors": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "graph_modules": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "summary": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "files": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/file"
+      }
+    },
+    "clusters": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/cluster"
+      }
+    },
+    "collapsed": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "path",
+          "kind",
+          "reason"
+        ],
+        "properties": {
+          "path": {
+            "type": "string"
+          },
+          "old_path": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "kind": {
+            "enum": [
+              "generated",
+              "cosmetic",
+              "rename",
+              "binary",
+              "deleted"
+            ]
+          },
+          "reason": {
+            "type": "string"
+          },
+          "added": {
+            "type": "integer"
+          },
+          "removed": {
+            "type": "integer"
+          }
+        }
+      }
+    },
+    "graph": {
+      "type": "object",
+      "required": [
+        "cluster_edges",
+        "file_edges"
+      ],
+      "properties": {
+        "cluster_edges": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "source",
+              "target",
+              "weight"
+            ],
+            "properties": {
+              "source": {
+                "type": "string"
+              },
+              "target": {
+                "type": "string"
+              },
+              "weight": {
+                "type": "integer",
+                "minimum": 1
+              }
+            }
+          }
+        },
+        "file_edges": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "source",
+              "target"
+            ],
+            "properties": {
+              "source": {
+                "type": "string",
+                "description": "importing file"
+              },
+              "target": {
+                "type": "string",
+                "description": "imported file"
+              },
+              "names": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "gaps": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/gap"
+      }
+    },
+    "findings": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/finding"
+      }
+    },
+    "symbols": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/symbol"
+      }
+    },
+    "rigor": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "description": "knob values used for tiers (see derive.KNOBS)"
+    },
+    "budget": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "properties": {
+        "clusters": {
+          "type": "object"
+        },
+        "files": {
+          "type": "object"
+        },
+        "lines_deep": {
+          "type": "integer"
+        },
+        "lines_skim": {
+          "type": "integer"
+        },
+        "lines_total": {
+          "type": "integer"
+        },
+        "est_minutes": {
+          "type": "integer"
+        },
+        "est_tokens": {
+          "type": "integer"
+        },
+        "baseline_tokens": {
+          "type": "integer"
+        },
+        "token_budget": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "demoted": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "delta": {
+      "type": "object",
+      "description": "How the structure changes between merge-base and head",
+      "properties": {
+        "symbols": {
+          "type": "object"
+        },
+        "module_edges": {
+          "type": "object",
+          "properties": {
+            "added": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": [
+                  "source",
+                  "target"
+                ],
+                "properties": {
+                  "source": {
+                    "type": "string"
+                  },
+                  "target": {
+                    "type": "string"
+                  }
+                }
+              }
+            },
+            "removed": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": [
+                  "source",
+                  "target"
+                ],
+                "properties": {
+                  "source": {
+                    "type": "string"
+                  },
+                  "target": {
+                    "type": "string"
+                  }
+                }
+              }
+            },
+            "added_total": {
+              "type": "integer"
+            },
+            "removed_total": {
+              "type": "integer"
+            }
+          }
+        },
+        "call_edges": {
+          "type": "object",
+          "properties": {
+            "added": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": [
+                  "source",
+                  "target"
+                ],
+                "properties": {
+                  "source": {
+                    "type": "string"
+                  },
+                  "target": {
+                    "type": "string"
+                  }
+                }
+              }
+            },
+            "removed": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": [
+                  "source",
+                  "target"
+                ],
+                "properties": {
+                  "source": {
+                    "type": "string"
+                  },
+                  "target": {
+                    "type": "string"
+                  }
+                }
+              }
+            },
+            "added_total": {
+              "type": "integer"
+            },
+            "removed_total": {
+              "type": "integer"
+            }
+          }
+        },
+        "package_edges": {
+          "type": "object",
+          "properties": {
+            "added": {
+              "type": "array",
+              "items": {
+                "type": "object"
+              }
+            },
+            "removed": {
+              "type": "array",
+              "items": {
+                "type": "object"
+              }
+            }
+          }
+        },
+        "cycles": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "files",
+              "edge"
+            ],
+            "properties": {
+              "files": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "edge": {
+                "type": "object",
+                "required": [
+                  "source",
+                  "target"
+                ],
+                "properties": {
+                  "source": {
+                    "type": "string"
+                  },
+                  "target": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "severity": {
+      "enum": [
+        "info",
+        "low",
+        "medium",
+        "high"
+      ]
+    },
+    "file": {
+      "type": "object",
+      "required": [
+        "path",
+        "status",
+        "kind",
+        "category",
+        "added",
+        "removed",
+        "score",
+        "score_reasons",
+        "signals",
+        "api_changes",
+        "cluster",
+        "findings"
+      ],
+      "properties": {
+        "path": {
+          "type": "string"
+        },
+        "old_path": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "status": {
+          "enum": [
+            "A",
+            "M",
+            "D",
+            "R",
+            "T"
+          ]
+        },
+        "kind": {
+          "enum": [
+            "semantic",
+            "generated",
+            "cosmetic",
+            "rename",
+            "binary",
+            "deleted"
+          ]
+        },
+        "category": {
+          "enum": [
+            "source",
+            "test",
+            "migration",
+            "dependency",
+            "config",
+            "ci",
+            "docs",
+            "other"
+          ]
+        },
+        "language": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "added": {
+          "type": "integer"
+        },
+        "removed": {
+          "type": "integer"
+        },
+        "similarity": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "score": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 100
+        },
+        "score_reasons": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "signals": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "line",
+              "kind",
+              "detail"
+            ],
+            "properties": {
+              "line": {
+                "type": "integer"
+              },
+              "kind": {
+                "type": "string"
+              },
+              "detail": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "api_changes": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "name",
+              "change"
+            ],
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "change": {
+                "enum": [
+                  "added",
+                  "removed",
+                  "changed"
+                ]
+              },
+              "old": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "new": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "compatible": {
+                "type": "boolean",
+                "description": "existing callers keep working"
+              }
+            }
+          }
+        },
+        "dependents": {
+          "type": "object",
+          "properties": {
+            "direct": {
+              "type": "integer"
+            },
+            "transitive": {
+              "type": "integer"
+            },
+            "outside_pr": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "tests": {
+          "type": "object",
+          "properties": {
+            "importing": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "changed": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "coverage": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "properties": {
+            "measured": {
+              "type": "integer"
+            },
+            "uncovered": {
+              "type": "array",
+              "items": {
+                "type": "integer"
+              }
+            }
+          }
+        },
+        "cluster": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "diff": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "diff_truncated": {
+          "type": "boolean"
+        },
+        "findings": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/finding"
+          }
+        },
+        "tier": {
+          "$ref": "#/$defs/tier"
+        },
+        "tier_reasons": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "review_lines": {
+          "type": "integer",
+          "description": "changed lines outside formatting-only hunks"
+        },
+        "symbols": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "hunks": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "old_start",
+              "old_len",
+              "new_start",
+              "new_len",
+              "trivial"
+            ],
+            "properties": {
+              "old_start": {
+                "type": "integer"
+              },
+              "old_len": {
+                "type": "integer"
+              },
+              "new_start": {
+                "type": "integer"
+              },
+              "new_len": {
+                "type": "integer"
+              },
+              "added": {
+                "type": "integer"
+              },
+              "removed": {
+                "type": "integer"
+              },
+              "trivial": {
+                "type": "boolean"
+              },
+              "symbols": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "cluster": {
+      "type": "object",
+      "required": [
+        "id",
+        "name",
+        "files",
+        "stats",
+        "summary",
+        "findings"
+      ],
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "files": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "reading order: tests first, then highest risk"
+        },
+        "stats": {
+          "type": "object",
+          "properties": {
+            "files": {
+              "type": "integer"
+            },
+            "added": {
+              "type": "integer"
+            },
+            "removed": {
+              "type": "integer"
+            },
+            "max_score": {
+              "type": "integer"
+            },
+            "mean_score": {
+              "type": "number"
+            },
+            "priority": {
+              "type": "number"
+            }
+          }
+        },
+        "dependents_outside_pr": {
+          "type": "integer"
+        },
+        "summary": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "findings": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/finding"
+          }
+        },
+        "tier": {
+          "$ref": "#/$defs/tier"
+        },
+        "tier_reasons": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "est_tokens": {
+          "type": "integer"
+        },
+        "has_high": {
+          "type": "boolean"
+        }
+      }
+    },
+    "gap": {
+      "type": "object",
+      "required": [
+        "kind",
+        "severity",
+        "message"
+      ],
+      "properties": {
+        "kind": {
+          "type": "string"
+        },
+        "severity": {
+          "$ref": "#/$defs/severity"
+        },
+        "file": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "files": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "set when one gap was folded from many files"
+        },
+        "cluster": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "message": {
+          "type": "string"
+        },
+        "evidence": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "source": {
+          "enum": [
+            "static",
+            "symbols",
+            "delta"
+          ]
+        },
+        "symbol": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    },
+    "finding": {
+      "type": "object",
+      "required": [
+        "severity",
+        "title"
+      ],
+      "properties": {
+        "severity": {
+          "$ref": "#/$defs/severity"
+        },
+        "title": {
+          "type": "string"
+        },
+        "detail": {
+          "type": "string"
+        },
+        "file": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "line": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "confidence": {
+          "enum": [
+            "low",
+            "medium",
+            "high"
+          ]
+        },
+        "source": {
+          "type": "string"
+        }
+      }
+    },
+    "tier": {
+      "enum": [
+        "deep",
+        "skim",
+        "skip"
+      ]
+    },
+    "symbol": {
+      "type": "object",
+      "required": [
+        "id",
+        "path",
+        "qualname",
+        "kind",
+        "change",
+        "breaking",
+        "callers"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "path::Qualified.name"
+        },
+        "path": {
+          "type": "string"
+        },
+        "qualname": {
+          "type": "string"
+        },
+        "kind": {
+          "enum": [
+            "function",
+            "method",
+            "class",
+            "module"
+          ]
+        },
+        "change": {
+          "enum": [
+            "added",
+            "removed",
+            "signature",
+            "modified"
+          ]
+        },
+        "breaking": {
+          "type": "boolean"
+        },
+        "public": {
+          "type": "boolean"
+        },
+        "line": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "end": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "col": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "old_line": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "old_sig": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "new_sig": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "callers": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "path",
+              "line",
+              "confidence",
+              "resolution"
+            ],
+            "properties": {
+              "path": {
+                "type": "string"
+              },
+              "line": {
+                "type": "integer"
+              },
+              "caller": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "call": {
+                "type": "boolean"
+              },
+              "confidence": {
+                "enum": [
+                  "high",
+                  "low"
+                ]
+              },
+              "resolution": {
+                "enum": [
+                  "name",
+                  "jedi"
+                ]
+              },
+              "in_pr": {
+                "type": "boolean"
+              },
+              "touched": {
+                "type": "boolean"
+              }
+            }
+          }
+        },
+        "callers_truncated": {
+          "type": "integer"
+        },
+        "high_callers": {
+          "type": "integer"
+        },
+        "untouched_callers": {
+          "type": "integer"
+        },
+        "resolution": {
+          "enum": [
+            "name",
+            "jedi"
+          ]
+        },
+        "callees_added": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "callees_removed": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "class_removed": {
+          "type": "boolean"
+        },
+        "inherits": {
+          "type": "boolean"
+        }
+      }
+    }
+  }
+}
