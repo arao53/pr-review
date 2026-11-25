@@ -1,0 +1,22 @@
+/* Styling for the pr-review marimo app. */
+.pr-card {
+  line-height: 1.5;
+  padding: 2px 0;
+}
+.pr-card-title {
+  font-weight: 600;
+  font-size: 15px;
+  margin-left: 6px;
+}
+.pr-muted {
+  color: #6b7785;
+  font-size: 13px;
+}
+code {
+  font-size: 0.9em;
+}
+.pr-row {
+  line-height: 1.55;
+  padding: 6px 0;
+  border-bottom: 1px solid #eef1f4;
+}

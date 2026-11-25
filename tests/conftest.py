@@ -1,0 +1,185 @@
+import subprocess
+import textwrap
+from pathlib import Path
+
+import pytest
+
+
+def git(root: Path, *args: str) -> str:
+    return subprocess.run(
+        ["git", *args], cwd=root, check=True, capture_output=True, text=True,
+        env={"GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@t", "GIT_COMMITTER_NAME": "t",
+             "GIT_COMMITTER_EMAIL": "t@t", "HOME": str(root), "PATH": "/usr/bin:/bin:/usr/local/bin"},
+    ).stdout
+
+
+def write(root: Path, files: dict[str, str | None]) -> None:
+    for rel, body in files.items():
+        p = root / rel
+        if body is None:
+            p.unlink()
+            continue
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text(textwrap.dedent(body).lstrip("\n"))
+
+
+class Repo:
+    def __init__(self, root: Path):
+        self.root = root
+        root.mkdir(parents=True, exist_ok=True)
+        git(root, "init", "-q", "-b", "main")
+
+    def commit(self, files: dict[str, str | None], msg: str = "c") -> None:
+        write(self.root, files)
+        git(self.root, "add", "-A")
+        git(self.root, "commit", "-q", "-m", msg)
+
+    def branch(self, name: str) -> None:
+        git(self.root, "checkout", "-q", "-b", name)
+
+    def mv(self, a: str, b: str) -> None:
+        (self.root / b).parent.mkdir(parents=True, exist_ok=True)
+        git(self.root, "mv", a, b)
+
+
+BASE = {
+    "pyproject.toml": """
+        [project]
+        name = "shop"
+        dependencies = ["requests"]
+    """,
+    "uv.lock": "version = 1\n",
+    "src/shop/__init__.py": "",
+    "src/shop/models.py": """
+        class Order:
+            def __init__(self, id, total):
+                self.id = id
+                self.total = total
+    """,
+    "src/shop/pricing.py": """
+        from shop.models import Order
+
+
+        def apply_discount(order, pct):
+            return order.total * (1 - pct)
+
+
+        def legacy_total(order):
+            return order.total
+    """,
+    "src/shop/auth/__init__.py": "",
+    "src/shop/auth/session.py": """
+        from ..models import Order
+
+
+        def make_session(user):
+            return {"user": user}
+    """,
+    "src/shop/utils.py": """
+        def fmt(x):
+            return str(x)
+    """,
+    "src/shop/old_helpers.py": """
+        def helper():
+            return 1
+    """,
+    "src/shop/report.py": """
+        from shop.pricing import apply_discount, legacy_total
+        from shop import old_helpers
+
+
+        def build(order):
+            return apply_discount(order, 0.1), legacy_total(order), old_helpers.helper()
+    """,
+    "src/shop/moved.py": """
+        def a():
+            return 1
+
+
+        def b():
+            return 2
+    """,
+    "tests/test_pricing.py": """
+        from shop.pricing import apply_discount
+        from shop.models import Order
+
+
+        def test_discount():
+            assert apply_discount(Order(1, 100), 0.5) == 50
+    """,
+    "tests/conftest.py": """
+        import pytest
+
+
+        @pytest.fixture
+        def order():
+            return 1
+    """,
+}
+
+
+@pytest.fixture
+def shop_repo(tmp_path: Path) -> Repo:
+    """A small src-layout repo with a feature branch that exercises every triage path."""
+    repo = Repo(tmp_path / "shop")
+    repo.commit(BASE, "base")
+    repo.branch("feature")
+    repo.mv("src/shop/moved.py", "src/shop/relocated.py")
+    repo.commit({
+        # signature change; report.py imports it and is not touched
+        "src/shop/pricing.py": """
+            from shop.models import Order
+
+
+            def apply_discount(order, rate, cap=None):
+                try:
+                    value = order.total * (1 - rate)
+                except Exception:
+                    value = 0
+                return value if cap is None else min(cap, value)
+        """,
+        # reformat only
+        "src/shop/utils.py": """
+            def fmt( x ):
+                # comment added
+                return str( x )
+        """,
+        "src/shop/auth/session.py": """
+            import subprocess
+            from ..models import Order
+
+            API_KEY = "sk_live_abcdefghijklmnop"
+
+
+            def make_session(user, extra=[]):
+                subprocess.run("echo hi", shell=True)
+                return {"user": user, "extra": extra}
+        """,
+        "src/shop/old_helpers.py": None,
+        "src/shop/new_feature.py": """
+            from shop.models import Order
+
+
+            def ship(order):
+                return order.id
+        """,
+        "src/shop/migrations/0002_backfill.py": """
+            from django.db import migrations
+
+
+            def forwards(apps, schema_editor):
+                pass
+
+
+            class Migration(migrations.Migration):
+                operations = [migrations.RunPython(forwards)]
+        """,
+        "src/shop/migrations/__init__.py": "",
+        "pyproject.toml": """
+            [project]
+            name = "shop"
+            dependencies = ["requests", "httpx"]
+        """,
+        "generated/api_pb2.py": "# Generated by the protocol buffer compiler.  DO NOT EDIT!\nX = 1\n",
+    }, "feature")
+    return repo

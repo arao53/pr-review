@@ -1,0 +1,433 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>PR review</title>
+<style>
+:root{--bg:#f7f7f5;--panel:#fff;--fg:#1c1c1e;--muted:#6b6b72;--line:#e2e2df;--accent:#2f5bd3;--chip:#efefec;
+  --add:#e7f5ec;--addfg:#126b2e;--del:#fdecec;--delfg:#a3121f;--hunk:#edf1fb;--sel:#2f5bd3}
+@media (prefers-color-scheme:dark){:root{--bg:#141416;--panel:#1c1c1f;--fg:#e8e8ec;--muted:#9b9ba3;--line:#2d2d33;--accent:#86a2ff;
+  --chip:#28282d;--add:#13301d;--addfg:#86e3a6;--del:#3a181b;--delfg:#ff9da6;--hunk:#1d2335;--sel:#86a2ff}}
+*{box-sizing:border-box}
+body{margin:0;font:14px/1.45 system-ui,-apple-system,"Segoe UI",sans-serif;background:var(--bg);color:var(--fg)}
+header{height:52px;padding:0 20px;border-bottom:1px solid var(--line);display:flex;gap:14px;align-items:center;white-space:nowrap;overflow:hidden}
+h1{font-size:16px;margin:0;cursor:pointer} h2{font-size:18px;margin:0 0 6px} h3{font-size:14px;margin:22px 0 8px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted)}
+.muted{color:var(--muted)} .mono,code{font:12.5px/1.45 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+main{display:grid;grid-template-columns:minmax(330px,36%) 1fr;height:calc(100vh - 52px)}
+#left{border-right:1px solid var(--line);overflow:auto;padding:12px}
+#right{overflow:auto;padding:18px 24px 60px}
+button,.btn{font:inherit;font-size:13px;border:1px solid var(--line);background:var(--panel);color:var(--fg);border-radius:6px;padding:4px 10px;cursor:pointer}
+button:hover{border-color:var(--accent)} button.on{background:var(--accent);color:#fff;border-color:var(--accent)}
+.bar{display:flex;gap:6px;align-items:center;margin-bottom:8px;flex-wrap:wrap}
+svg.graph{width:100%;height:auto;background:var(--panel);border:1px solid var(--line);border-radius:8px;display:block}
+svg .edge{stroke:var(--muted);opacity:.45;fill:none} svg .node{cursor:pointer} svg .node text{fill:var(--fg);font-size:11px;pointer-events:none}
+svg .node.sel circle{stroke:var(--sel);stroke-width:3} svg .node circle{stroke:var(--panel);stroke-width:1.5}
+.legend{font-size:12px;color:var(--muted);margin:6px 2px 12px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:9px 11px;margin-bottom:7px;cursor:pointer}
+.card:hover{border-color:var(--accent)} .card.sel{border-color:var(--sel);box-shadow:0 0 0 1px var(--sel)}
+.card .top{display:flex;justify-content:space-between;gap:8px} .card .name{font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.riskbar{height:4px;border-radius:2px;background:var(--chip);margin-top:7px;overflow:hidden} .riskbar>div{height:100%}
+.chip{display:inline-block;background:var(--chip);border-radius:10px;padding:1px 8px;font-size:12px;margin-right:4px;white-space:nowrap}
+.score{display:inline-block;min-width:30px;text-align:center;border-radius:5px;padding:1px 5px;color:#fff;font-size:12px;font-weight:600}
+.sev{font-size:11px;font-weight:700;text-transform:uppercase;border-radius:4px;padding:1px 6px;margin-right:6px}
+.sev.high{background:#c62828;color:#fff} .sev.medium{background:#ef8f00;color:#fff} .sev.low{background:var(--chip)} .sev.info{background:var(--chip);color:var(--muted)}
+.stats{display:flex;gap:8px;flex-wrap:wrap;margin:10px 0}
+.stat{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:8px 12px;min-width:96px}
+.stat b{display:block;font-size:18px}
+ul.plain{list-style:none;padding:0;margin:0} ul.plain li{padding:6px 0;border-bottom:1px solid var(--line)}
+a,.link{color:var(--accent);cursor:pointer;text-decoration:none} a:hover,.link:hover{text-decoration:underline}
+table{border-collapse:collapse;width:100%} td,th{padding:6px 6px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top} th{font-size:12px;color:var(--muted);font-weight:600}
+tr.viewed td{opacity:.5} td.num{text-align:right;white-space:nowrap}
+input[type=search]{font:inherit;padding:4px 8px;border:1px solid var(--line);border-radius:6px;background:var(--panel);color:var(--fg);min-width:220px}
+pre.diff{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:8px 0;overflow:auto;margin:8px 0}
+pre.diff div{padding:0 12px;white-space:pre} pre.diff .a{background:var(--add);color:var(--addfg)} pre.diff .d{background:var(--del);color:var(--delfg)}
+pre.diff .h{background:var(--hunk);color:var(--muted)} pre.diff .m{color:var(--muted)} pre.diff .flash{outline:2px solid var(--sel)}
+.finding{border-left:3px solid var(--line);padding:4px 10px;margin:6px 0} .finding.high{border-color:#c62828} .finding.medium{border-color:#ef8f00}
+.note{background:var(--panel);border:1px dashed var(--line);border-radius:8px;padding:10px 12px;margin:10px 0;color:var(--muted)}
+details summary{cursor:pointer;margin:4px 0}
+</style>
+</head>
+<body>
+<header>
+  <h1 id="home" title="Back to overview">PR review</h1>
+  <span id="refs" class="mono muted"></span>
+  <span style="flex:1"></span>
+  <span id="progress" class="muted"></span>
+</header>
+<main>
+  <section id="left">
+    <div class="bar" id="graphbar"></div>
+    <div id="graph"></div>
+    <div class="legend">Node size is lines changed. Color is the highest risk score (green low, red high). Arrows point from importer to imported.</div>
+    <div id="clusters"></div>
+  </section>
+  <section id="right"></section>
+</main>
+<script id="data" type="application/json">/*__PR_REVIEW_DATA__*/</script>
+<script>
+"use strict";
+const D = JSON.parse(document.getElementById("data").textContent);
+const FILES = Object.fromEntries(D.files.map(f => [f.path, f]));
+const CLUSTERS = Object.fromEntries(D.clusters.map(c => [c.id, c]));
+const state = { cluster: null, file: null, graph: "clusters", filter: "", hideViewed: false };
+
+const viewed = (() => {
+  const mem = {};
+  const key = p => `pr-review:${D.meta.head_sha}:${p}`;
+  return {
+    get(p) { try { return localStorage.getItem(key(p)) === "1"; } catch (e) { return !!mem[p]; } },
+    set(p, v) { try { v ? localStorage.setItem(key(p), "1") : localStorage.removeItem(key(p)); } catch (e) { mem[p] = v; } },
+  };
+})();
+
+function h(tag, attrs, ...kids) {
+  const svg = tag.startsWith("svg:");
+  const el = svg ? document.createElementNS("http://www.w3.org/2000/svg", tag.slice(4)) : document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs || {})) {
+    if (v == null || v === false) continue;
+    if (k.startsWith("on")) el.addEventListener(k.slice(2), v);
+    else el.setAttribute(k, v === true ? "" : v);
+  }
+  for (const kid of kids.flat(Infinity)) {
+    if (kid == null || kid === false) continue;
+    el.append(kid.nodeType ? kid : document.createTextNode(String(kid)));
+  }
+  return el;
+}
+const riskColor = s => `hsl(${Math.round(130 - 1.3 * Math.min(100, s))} 60% 44%)`;
+const base = p => p.split("/").pop();
+const trunc = (s, n) => s.length > n ? s.slice(0, n - 1) + "…" : s;
+const scoreBadge = s => h("span", { class: "score", style: `background:${riskColor(s)}` }, s);
+const sevTag = s => h("span", { class: `sev ${s}` }, s);
+const gapsFor = p => D.gaps.filter(g => g.file === p || (g.files || []).includes(p));
+const fileLink = (p, label) => h("span", { class: "link mono", onclick: () => selectFile(p) }, label || p);
+
+// ------------------------------------------------------------- graph
+function layout(nodes, edges, W, H) {
+  // Fruchterman-Reingold in an unbounded plane, then scaled to fit the box.
+  const n = nodes.length;
+  let seed = 7;
+  const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+  nodes.forEach((d, i) => {
+    const a = 2 * Math.PI * i / Math.max(1, n);
+    d.x = Math.cos(a) * 100 + rnd() * 5; d.y = Math.sin(a) * 100 + rnd() * 5;
+  });
+  if (n === 1) { nodes[0].x = W / 2; nodes[0].y = H / 2; return; }
+  if (n === 0) return;
+  const idx = new Map(nodes.map((d, i) => [d.id, i]));
+  const k = 60, iters = 400;
+  for (let it = 0; it < iters; it++) {
+    const temp = 20 * (1 - it / iters) + 0.5;
+    for (const a of nodes) { a.fx = 0; a.fy = 0; }
+    for (let i = 0; i < n; i++) for (let j = i + 1; j < n; j++) {
+      const a = nodes[i], b = nodes[j];
+      const dx = a.x - b.x, dy = a.y - b.y, d2 = dx * dx + dy * dy + 0.01, f = k * k / d2;
+      a.fx += dx * f; a.fy += dy * f; b.fx -= dx * f; b.fy -= dy * f;
+    }
+    for (const e of edges) {
+      const a = nodes[idx.get(e.source)], b = nodes[idx.get(e.target)];
+      if (!a || !b) continue;
+      const dx = a.x - b.x, dy = a.y - b.y, d = Math.hypot(dx, dy) + 0.01;
+      const f = d / k * (0.8 + 0.3 * Math.log2(1 + (e.weight || 1)));
+      a.fx -= dx * f; a.fy -= dy * f; b.fx += dx * f; b.fy += dy * f;
+    }
+    for (const a of nodes) {
+      const r = Math.hypot(a.x, a.y) + 0.01;
+      a.fx -= a.x / r * r * r / (k * 8); a.fy -= a.y / r * r * r / (k * 8);  // gravity grows with distance
+      const m = Math.hypot(a.fx, a.fy) || 1, step = Math.min(m, temp);
+      a.x += a.fx / m * step; a.y += a.fy / m * step;
+    }
+  }
+  const pad = 50;
+  const xs = nodes.map(d => d.x), ys = nodes.map(d => d.y);
+  const x0 = Math.min(...xs), x1 = Math.max(...xs), y0 = Math.min(...ys), y1 = Math.max(...ys);
+  const sx = (W - 2 * pad) / Math.max(1, x1 - x0), sy = (H - 2 * pad) / Math.max(1, y1 - y0);
+  const sc = Math.min(sx, sy, 2.5);
+  const cx = (x0 + x1) / 2, cy = (y0 + y1) / 2;
+  for (const d of nodes) { d.x = W / 2 + (d.x - cx) * sc; d.y = H / 2 - 6 + (d.y - cy) * sc; }
+}
+
+function renderGraph() {
+  const bar = document.getElementById("graphbar");
+  const single = D.clusters.length === 1;
+  const c = (state.cluster && CLUSTERS[state.cluster]) || (single ? D.clusters[0] : null);
+  if (single) state.graph = "files";
+  if (!c && state.graph === "files") state.graph = "clusters";
+  bar.replaceChildren(
+    h("button", { class: state.graph === "clusters" ? "on" : null, disabled: single, onclick: () => { state.graph = "clusters"; renderGraph(); } }, "All clusters"),
+    h("button", { class: state.graph === "files" ? "on" : null, disabled: !c,
+      title: c ? "" : "Pick a cluster first", onclick: () => { state.graph = "files"; renderGraph(); } },
+      c ? `Files in ${trunc(c.name, 28)}` : "Files in cluster"),
+  );
+  const W = 640, H = 400;
+  let nodes, edges;
+  if (state.graph === "files") {
+    const set = new Set(c.files);
+    nodes = c.files.map(p => ({ id: p, label: base(p), score: FILES[p].score,
+      r: 5 + Math.min(10, Math.sqrt(FILES[p].added + FILES[p].removed) / 2), title: p }));
+    edges = D.graph.file_edges.filter(e => set.has(e.source) && set.has(e.target)).map(e => ({ ...e, weight: 1 }));
+  } else {
+    nodes = D.clusters.map(cl => ({ id: cl.id, label: cl.name, score: cl.stats.max_score,
+      r: 10 + Math.min(22, Math.sqrt(cl.stats.added + cl.stats.removed) / 3),
+      title: `${cl.name}: ${cl.stats.files} files, +${cl.stats.added}/-${cl.stats.removed}` }));
+    edges = D.graph.cluster_edges;
+  }
+  layout(nodes, edges, W, H);
+  const pos = Object.fromEntries(nodes.map(d => [d.id, d]));
+  const svg = h("svg:svg", { class: "graph", viewBox: `0 0 ${W} ${H}`, role: "img", "aria-label": "dependency graph" },
+    h("svg:defs", {}, h("svg:marker", { id: "arrow", viewBox: "0 0 10 10", refX: 9, refY: 5, markerWidth: 8, markerHeight: 8,
+      markerUnits: "userSpaceOnUse", orient: "auto-start-reverse" },
+      h("svg:path", { d: "M0,0 L10,5 L0,10 z", style: "fill:var(--muted);opacity:.8" }))));
+  for (const e of edges) {
+    const a = pos[e.source], b = pos[e.target];
+    if (!a || !b) continue;
+    const dx = b.x - a.x, dy = b.y - a.y, d = Math.hypot(dx, dy) || 1;
+    svg.append(h("svg:line", { class: "edge", x1: a.x + dx / d * a.r, y1: a.y + dy / d * a.r,
+      x2: b.x - dx / d * (b.r + 3), y2: b.y - dy / d * (b.r + 3),
+      "stroke-width": 1 + Math.log2(e.weight || 1), "marker-end": "url(#arrow)" },
+      h("svg:title", {}, `${e.source} imports ${e.target}` + (e.weight > 1 ? ` (${e.weight} links)` : ""))));
+  }
+  for (const d of nodes) {
+    const sel = state.graph === "files" ? state.file === d.id : state.cluster === d.id;
+    const g = h("svg:g", { class: "node" + (sel ? " sel" : ""),
+      onclick: () => state.graph === "files" ? selectFile(d.id) : selectCluster(d.id) },
+      h("svg:circle", { cx: d.x, cy: d.y, r: d.r, fill: riskColor(d.score) }),
+      h("svg:text", { x: d.x, y: d.y + d.r + 12, "text-anchor": "middle" }, trunc(d.label, 26)),
+      h("svg:title", {}, d.title));
+    svg.append(g);
+  }
+  document.getElementById("graph").replaceChildren(svg);
+}
+
+// ------------------------------------------------------------- left list
+function viewedCount(c) { return c.files.filter(p => viewed.get(p)).length; }
+
+function renderClusterList() {
+  const list = D.clusters.map(c => {
+    const nGaps = D.gaps.filter(g => g.cluster === c.id && g.severity !== "info").length;
+    return h("div", { class: "card" + (state.cluster === c.id ? " sel" : ""), onclick: () => selectCluster(c.id) },
+      h("div", { class: "top" }, h("span", { class: "name", title: c.name }, c.name), scoreBadge(c.stats.max_score)),
+      h("div", { class: "muted", style: "font-size:12px;margin-top:3px" },
+        `${c.stats.files} files · +${c.stats.added} / -${c.stats.removed} · ${viewedCount(c)}/${c.files.length} viewed`,
+        nGaps ? ` · ${nGaps} gap${nGaps > 1 ? "s" : ""}` : ""),
+      h("div", { class: "riskbar" }, h("div", { style: `width:${c.stats.max_score}%;background:${riskColor(c.stats.max_score)}` })));
+  });
+  document.getElementById("clusters").replaceChildren(
+    h("h3", { style: "margin-top:4px" }, "Clusters, highest priority first"), ...list);
+  const total = D.clusters.reduce((n, c) => n + c.files.length, 0);
+  const done = D.clusters.reduce((n, c) => n + viewedCount(c), 0);
+  document.getElementById("progress").textContent = `${done} of ${total} reviewable files viewed`;
+}
+
+// ------------------------------------------------------------- right panel
+function findingList(items) {
+  if (!items || !items.length) return null;
+  return items.map(f => h("div", { class: `finding ${f.severity}` },
+    h("div", {}, sevTag(f.severity), h("b", {}, f.title),
+      f.confidence ? h("span", { class: "muted" }, ` (${f.confidence} confidence)`) : null),
+    f.detail ? h("div", {}, f.detail) : null,
+    f.file ? h("div", {}, fileLink(f.file, f.line ? `${f.file}:${f.line}` : f.file)) : null));
+}
+
+function gapList(gaps) {
+  if (!gaps.length) return h("p", { class: "muted" }, "Nothing flagged.");
+  return h("ul", { class: "plain" }, gaps.map(g => h("li", {},
+    sevTag(g.severity), g.message,
+    g.file ? h("div", {}, fileLink(g.file)) : null,
+    g.evidence && g.evidence.length ? h("div", { class: "muted mono", style: "font-size:12px" }, g.evidence.join("  ·  ")) : null)));
+}
+
+function copyButton(text, label) {
+  const b = h("button", { onclick: async () => {
+    try { await navigator.clipboard.writeText(text); b.textContent = "Copied"; }
+    catch (e) { window.prompt("Copy this prompt:", text); }
+    setTimeout(() => b.textContent = label, 1500);
+  } }, label);
+  return b;
+}
+
+function overview() {
+  const s = D.stats;
+  const byKind = {};
+  for (const c of D.collapsed) (byKind[c.kind] = byKind[c.kind] || []).push(c);
+  return [
+    h("h2", {}, `${D.meta.repo}: ${D.meta.head} into ${D.meta.base}`),
+    h("div", { class: "muted mono" }, `${D.meta.merge_base_sha.slice(0, 10)}..${D.meta.head_sha.slice(0, 10)} · generated ${D.meta.generated_at}`),
+    h("div", { class: "stats" },
+      [["files changed", s.files_changed], ["to review", s.reviewable_files], ["collapsed", s.collapsed_files],
+       ["lines +/-", `${s.lines_added}/${s.lines_removed}`], ["clusters", s.clusters]]
+        .map(([k, v]) => h("div", { class: "stat" }, h("b", {}, v), h("span", { class: "muted" }, k)))),
+    D.summary ? h("div", {}, h("h3", {}, "Summary"), h("p", {}, D.summary)) : null,
+    D.findings.length ? [h("h3", {}, "Findings"), findingList(D.findings)] : null,
+    h("h3", {}, "Where to start"),
+    h("ol", {}, D.clusters.slice(0, 5).map(c => h("li", {},
+      h("span", { class: "link", onclick: () => selectCluster(c.id) }, c.name), " ",
+      h("span", { class: "muted" }, `max risk ${c.stats.max_score}, ${c.stats.files} files`)))),
+    h("h3", {}, `Gaps (${D.gaps.length})`),
+    gapList(D.gaps),
+    h("h3", {}, `Collapsed (${D.collapsed.length})`),
+    D.collapsed.length ? Object.entries(byKind).map(([k, items]) => h("details", {},
+      h("summary", {}, `${k}: ${items.length} file${items.length > 1 ? "s" : ""}`),
+      h("ul", { class: "plain" }, items.map(c => h("li", { class: "mono" }, c.path,
+        h("span", { class: "muted" }, `  ${c.reason}` + (c.added + c.removed ? ` (+${c.added}/-${c.removed})` : ""))))))) :
+      h("p", { class: "muted" }, "Nothing collapsed."),
+    h("div", { class: "note" }, D.meta.graph_note || ""),
+  ];
+}
+
+function clusterView(c) {
+  const rows = c.files.filter(p => {
+    if (state.hideViewed && viewed.get(p)) return false;
+    return !state.filter || p.toLowerCase().includes(state.filter.toLowerCase());
+  }).map(p => {
+    const f = FILES[p], nGaps = gapsFor(p).filter(g => g.severity !== "info").length;
+    const box = h("input", { type: "checkbox", title: "Mark as viewed", onchange: e => { viewed.set(p, e.target.checked); render(); } });
+    box.checked = viewed.get(p);
+    return h("tr", { class: viewed.get(p) ? "viewed" : null }, h("td", {}, box),
+      h("td", {}, fileLink(p), h("div", {}, h("span", { class: "chip" }, f.category), f.status === "A" ? h("span", { class: "chip" }, "new") : null)),
+      h("td", { class: "num mono" }, `+${f.added} -${f.removed}`),
+      h("td", { class: "num" }, f.signals.length ? `${f.signals.length} signal${f.signals.length > 1 ? "s" : ""}` : ""),
+      h("td", { class: "num" }, nGaps ? `${nGaps} gap${nGaps > 1 ? "s" : ""}` : ""),
+      h("td", { class: "num" }, scoreBadge(f.score)));
+  });
+  const reviewPath = D.meta.review_path || "review.json";
+  const prompt = `Use the pr-review skill to deep-review cluster ${c.id} ("${c.name}") in ${reviewPath}. ` +
+    `Read the files in this order: ${c.files.slice(0, 8).join(", ")}${c.files.length > 8 ? ", ..." : ""}. ` +
+    `Write findings with file:line references into the cluster's findings array.`;
+  const search = h("input", { type: "search", placeholder: "Filter files", value: state.filter,
+    oninput: e => { state.filter = e.target.value; const pos = e.target.selectionStart; render(); const el = document.querySelector("#right input[type=search]"); el.focus(); el.setSelectionRange(pos, pos); } });
+  const hide = h("input", { type: "checkbox", id: "hv", onchange: e => { state.hideViewed = e.target.checked; render(); } });
+  hide.checked = state.hideViewed;
+  const gaps = D.gaps.filter(g => g.cluster === c.id);
+  return [
+    h("div", { class: "muted" }, h("span", { class: "link", onclick: () => selectCluster(null) }, "Overview"), ` / ${c.id}`),
+    h("h2", {}, c.name),
+    h("div", { class: "stats" },
+      [["files", c.stats.files], ["lines +/-", `${c.stats.added}/${c.stats.removed}`], ["max risk", c.stats.max_score],
+       ["mean risk", c.stats.mean_score], ["importers outside PR", c.dependents_outside_pr]]
+        .map(([k, v]) => h("div", { class: "stat" }, h("b", {}, v), h("span", { class: "muted" }, k)))),
+    h("div", { class: "bar" }, copyButton(prompt, "Copy prompt for Claude")),
+    c.summary ? h("p", {}, c.summary) : null,
+    c.findings.length ? [h("h3", {}, "Findings"), findingList(c.findings)] : null,
+    gaps.length ? [h("h3", {}, `Gaps (${gaps.length})`), gapList(gaps)] : null,
+    h("h3", {}, "Files, in suggested reading order"),
+    h("div", { class: "bar" }, search, h("label", {}, hide, " hide viewed")),
+    h("table", {}, h("tr", {}, ["", "file", "lines", "", "", "risk"].map(t => h("th", {}, t))), rows),
+  ];
+}
+
+function diffView(diff, signalLines) {
+  const out = h("pre", { class: "diff mono" });
+  let newLn = 0, n = 0;
+  const lines = diff.split("\n");
+  const limit = 4000;
+  for (const line of lines) {
+    if (++n > limit) { out.append(h("div", { class: "m" }, `... ${lines.length - limit} more lines not shown`)); break; }
+    let cls = null, id = null;
+    const m = /^@@ -\d+(?:,\d+)? \+(\d+)/.exec(line);
+    if (m) { newLn = +m[1]; cls = "h"; }
+    else if (/^(diff |index |--- |\+\+\+ |similarity|rename |new file|deleted file|old mode|new mode)/.test(line)) cls = "m";
+    else if (line.startsWith("+")) { cls = "a"; id = `L${newLn}`; newLn++; }
+    else if (line.startsWith("-")) cls = "d";
+    else if (line.startsWith(" ")) { id = `L${newLn}`; newLn++; }
+    out.append(h("div", { class: cls, id, title: id && signalLines.has(+id.slice(1)) ? signalLines.get(+id.slice(1)) : null }, line || " "));
+  }
+  return out;
+}
+
+function jumpTo(line) {
+  const el = document.getElementById(`L${line}`);
+  if (!el) return;
+  el.scrollIntoView({ block: "center" });
+  el.classList.add("flash");
+  setTimeout(() => el.classList.remove("flash"), 1600);
+}
+
+function fileView(f) {
+  const c = f.cluster && CLUSTERS[f.cluster];
+  const sigLines = new Map(f.signals.map(s => [s.line, s.detail]));
+  const box = h("input", { type: "checkbox", onchange: e => { viewed.set(f.path, e.target.checked); renderClusterList(); } });
+  box.checked = viewed.get(f.path);
+  const prompt = `Use the pr-review skill to deep-review ${f.path} (cluster ${f.cluster}) from ${D.meta.review_path || "review.json"}. ` +
+    `Its risk score is ${f.score} because: ${f.score_reasons.join("; ")}. Check the flagged lines and the importers outside the PR.`;
+  return [
+    h("div", { class: "muted" }, h("span", { class: "link", onclick: () => selectCluster(null) }, "Overview"), " / ",
+      c ? h("span", { class: "link", onclick: () => selectCluster(c.id) }, c.name) : "collapsed", ` / ${base(f.path)}`),
+    h("h2", { class: "mono", style: "font-size:16px" }, f.path),
+    f.old_path ? h("div", { class: "muted mono" }, `renamed from ${f.old_path}`) : null,
+    h("div", { class: "bar", style: "margin-top:8px" }, scoreBadge(f.score), h("span", { class: "chip" }, f.kind), h("span", { class: "chip" }, f.category),
+      h("span", { class: "chip mono" }, `+${f.added} -${f.removed}`), h("label", {}, box, " viewed"), copyButton(prompt, "Copy prompt for Claude")),
+    h("h3", {}, "Why this score"),
+    h("ul", {}, f.score_reasons.map(r => h("li", {}, r))),
+    f.findings.length ? [h("h3", {}, "Findings"), findingList(f.findings)] : null,
+    gapsFor(f.path).length ? [h("h3", {}, "Gaps"), gapList(gapsFor(f.path))] : null,
+    f.signals.length ? [h("h3", {}, "Risk patterns on added lines"), h("ul", { class: "plain" }, f.signals.map(s =>
+      h("li", {}, h("span", { class: "link mono", onclick: () => jumpTo(s.line) }, `line ${s.line}`), "  ", s.detail)))] : null,
+    f.api_changes.length ? [h("h3", {}, "Public API changes"), h("table", {}, [...f.api_changes]
+      .sort((x, y) => (x.compatible === false ? 0 : 1) - (y.compatible === false ? 0 : 1)).map(a => h("tr", {},
+      h("td", {}, h("span", { class: "chip", style: a.compatible === false ? "background:#c62828;color:#fff" : null },
+        a.change === "changed" ? (a.compatible ? "compatible" : "breaking") : a.change)), h("td", { class: "mono" }, a.name),
+      h("td", { class: "mono muted" }, a.change === "changed" ? `${a.old}\n→ ${a.new}` : (a.new || a.old)))))] : null,
+    f.dependents && f.dependents.outside_pr.length ? [h("h3", {}, `Importers not in this PR (${f.dependents.direct} direct, ${f.dependents.transitive} total)`),
+      h("div", { class: "mono", style: "font-size:12.5px" }, f.dependents.outside_pr.map(p => h("div", {}, p)))] : null,
+    f.tests && (f.tests.importing.length || f.category === "source") ? [h("h3", {}, "Tests"),
+      f.tests.importing.length ? h("div", { class: "mono", style: "font-size:12.5px" }, f.tests.importing.map(p =>
+        h("div", {}, FILES[p] ? fileLink(p) : p, f.tests.changed.includes(p) ? h("span", { class: "chip", style: "margin-left:6px" }, "changed in PR") : null)))
+        : h("p", { class: "muted" }, "No test imports this module.")] : null,
+    f.coverage ? h("p", {}, `Coverage: ${f.coverage.uncovered.length} of ${f.coverage.measured} changed executable lines not covered.`,
+      f.coverage.uncovered.length ? h("span", { class: "mono muted" }, " " + f.coverage.uncovered.slice(0, 30).join(", ")) : null) : null,
+    h("h3", {}, "Diff"),
+    f.diff ? [diffView(f.diff, sigLines), f.diff_truncated ? h("p", { class: "muted" }, "Diff truncated. Open the file locally for the rest.") : null]
+      : h("p", { class: "muted" }, f.kind === "semantic" ? "Diffs were left out of this report (--no-diffs)." : "Collapsed file, no diff included."),
+  ];
+}
+
+function render() {
+  const right = document.getElementById("right");
+  const scroll = right.scrollTop;
+  let view;
+  if (state.file && FILES[state.file]) view = fileView(FILES[state.file]);
+  else if (state.cluster) view = clusterView(CLUSTERS[state.cluster]);
+  else view = overview();
+  right.replaceChildren(...[view].flat(Infinity).filter(Boolean));
+  if (!state.keepScroll) right.scrollTop = 0; else right.scrollTop = scroll;
+  state.keepScroll = false;
+  renderClusterList();
+}
+
+function selectCluster(id) {
+  state.cluster = id; state.file = null; state.filter = "";
+  if (!id) state.graph = "clusters";
+  renderGraph(); render(); writeHash();
+}
+function selectFile(p) {
+  const f = FILES[p];
+  if (!f) return;
+  state.file = p;
+  if (f.cluster) { state.cluster = f.cluster; state.graph = "files"; }
+  renderGraph(); render(); writeHash();
+}
+function writeHash() {
+  const parts = [];
+  if (state.cluster) parts.push("c=" + encodeURIComponent(state.cluster));
+  if (state.file) parts.push("f=" + encodeURIComponent(state.file));
+  try { history.replaceState(null, "", parts.length ? "#" + parts.join("&") : location.pathname + location.search); }
+  catch (e) { /* some browsers block history changes on file:// pages; deep links are a nicety */ }
+}
+function readHash() {
+  const q = new URLSearchParams(location.hash.slice(1));
+  state.cluster = CLUSTERS[q.get("c")] ? q.get("c") : null;
+  state.file = FILES[q.get("f")] ? q.get("f") : null;
+  if (state.file && FILES[state.file].cluster) { state.cluster = FILES[state.file].cluster; state.graph = "files"; }
+}
+
+document.getElementById("home").onclick = () => selectCluster(null);
+document.getElementById("refs").textContent = `${D.meta.head} → ${D.meta.base}`;
+document.title = `PR review: ${D.meta.head}`;
+readHash();
+renderGraph();
+render();
+</script>
+</body>
+</html>

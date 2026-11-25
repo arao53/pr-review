@@ -1,0 +1,38 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pr-review"
+version = "0.3.0"
+description = "Triage, cluster and map large Python pull requests before you read them."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "Akshay K. Rao" }]
+dependencies = [
+    "click>=8.1",
+    "networkx>=3.0",
+]
+
+[project.optional-dependencies]
+refine = ["jedi>=0.19"]
+app = ["marimo>=0.20", "altair>=5", "jedi>=0.19"]
+dev = [
+    "pytest>=7",
+    "jsonschema>=4",
+    "jedi>=0.19",
+]
+
+[project.scripts]
+pr-review = "pr_review.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+pr_review = ["schema/*.json", "templates/*.html", "app.css", "skill/*.md"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = ["slow: larger synthetic repos"]
