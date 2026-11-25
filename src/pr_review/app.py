@@ -165,7 +165,7 @@ def _(analyze_btn, appkit, base_pick, derive, go, head_pick, mo, repo, repo_conf
                 _out = mo.callout(mo.md("These two versions have the same code, so there is nothing to review. "
                                         "Check that you picked the right versions."), kind="warn")
             else:
-                appkit.save(_r, repo)
+                appkit.save(_r, repo, fresh=True)
                 set_review(_r)
                 go()
                 _out = mo.md("")
@@ -242,6 +242,7 @@ def _(appkit, mo, refine_btn, view):
     mo.vstack([
         mo.md(f"## {appkit.ref_label(view['meta']['head'])} → {view['meta']['base']}"),
         mo.md(appkit.headline(view)),
+        mo.callout(mo.md(f"**AI review summary.** {view['summary']}"), kind="info") if view.get("summary") else mo.md(""),
         mo.hstack([
             mo.stat(f"{_b['files']['deep']}", label="Files to read closely", caption=f"{_b['lines_deep']:,} lines",
                     bordered=True),
@@ -330,8 +331,12 @@ def _(appkit, cur_area, cur_file, go, mo, progress, view):
         for _c, _btn in zip(_order, area_open):
             _n = len([g for g in view["gaps"] if g.get("cluster") == _c["id"] and g["severity"] in ("high", "medium")])
             _done = progress.count(_c["files"])
+            _nf = len(_c.get("findings", []))
             _info = (f"{_c['stats']['files']} files · +{_c['stats']['added']:,} / −{_c['stats']['removed']:,} lines"
-                     + (f" · <b>{_n} to check</b>" if _n else "") + f" · {_done}/{len(_c['files'])} done")
+                     + (f" · <b>{_n} to check</b>" if _n else "")
+                     + (f" · {_nf} AI finding{'s' if _nf != 1 else ''}" if _nf else
+                        (" · AI review out of date" if _c.get("previous") else ""))
+                     + f" · {_done}/{len(_c['files'])} done")
             _cards.append(mo.hstack([
                 mo.md(f"<div class='pr-card'>{appkit.badge(_c['tier'])} "
                       f"<span class='pr-card-title'>{appkit.short(_c['name'], 48)}</span><br>"
@@ -375,7 +380,11 @@ def _(appkit, cur_area, cur_file, go, mo, progress, view):
                       + (f" · <b>{_n} to check</b>" if _n else "") + "</span></div>"),
                 _btn], justify="space-between", align="center", widths=[9, 1]))
         _gaps = [g for g in view["gaps"] if g.get("cluster") == cur_area["id"] and g["severity"] != "info"]
-        _checks = [mo.callout(mo.md(f"**{appkit.gap_help(g['kind'])[0]}**. {g['message']}"),
+        _checks = [mo.callout(mo.md(appkit.finding_md(f)), kind=appkit.FINDING_KIND[f["severity"]])
+                   for f in cur_area.get("findings", [])[:8]]
+        if cur_area.get("summary"):
+            _checks.insert(0, mo.md(f"<span class='pr-muted'>AI review:</span> {cur_area['summary']}"))
+        _checks += [mo.callout(mo.md(f"**{appkit.gap_help(g['kind'])[0]}**. {g['message']}"),
                               kind=appkit.SEVERITY[g["severity"]]["kind"]) for g in _gaps[:8]]
         area_view = mo.vstack([
             mo.md(f"## {cur_area['name']}  {appkit.badge(cur_area['tier'])}"),
@@ -459,7 +468,9 @@ def _(appkit, cur_area, cur_file, go, html, mo, nav, progress, set_tick, view):
         _reasons = [appkit.plain_reason(r) for r in cur_file["score_reasons"]]
         _reason_md = "\n".join(f"- {txt} <span class='pr-muted'>({pts})</span>" for pts, txt in _reasons)
         _gaps = [g for g in view["gaps"] if g.get("file") == _path or _path in g.get("files", [])]
-        _gap_blocks = []
+        _gap_blocks = [mo.callout(mo.md(appkit.finding_md(f, with_where=False) + (
+            f"  \n<span class='pr-muted'>line {f['line']}</span>" if f.get("line") else "")),
+            kind=appkit.FINDING_KIND[f["severity"]]) for f in cur_file.get("findings", [])]
         for _g in _gaps:
             _t, _what, _do = appkit.gap_help(_g["kind"])
             _ev = "".join(f"<li><code>{e}</code></li>" for e in _g.get("evidence", [])[:8])
@@ -503,6 +514,16 @@ def _(appkit, go, mo, view):
         for g in view["gaps"]])
     _idx = {id(_g): _i for _i, _g in enumerate(view["gaps"])}
     _sections = {}
+    _af = appkit.all_findings(view)
+    finding_open = mo.ui.array([
+        mo.ui.button(label="Open file", disabled=not f.get("file"),
+                     on_click=lambda _, f=f.get("file"), c=c: go(c, f) if f else go(c))
+        for f, c in _af])
+    if _af:
+        _sections[f"From the AI review ({len(_af)})"] = mo.vstack([
+            mo.hstack([mo.callout(mo.md(appkit.finding_md(f)), kind=appkit.FINDING_KIND[f["severity"]]), b],
+                      justify="space-between", align="start", widths=[8, 1])
+            for (f, _c), b in zip(_af, finding_open)], gap=0.6)
     for _sev in ("high", "medium", "low", "info"):
         _items = _groups.get(_sev, [])
         if not _items:
@@ -515,10 +536,11 @@ def _(appkit, go, mo, view):
                 mo.md(f"**{_t}**  \n{_g['message']}  \n<span class='pr-muted'>{_what} {('What to do: ' + _do) if _do else ''}"
                       f"</span>  \n<span class='pr-muted'>Where: <code>{_where}</code></span>"),
                 check_open[_idx[id(_g)]]], justify="space-between", align="start", widths=[8, 1]))
-        _sections[f"{appkit.SEVERITY[_sev]['label']} ({len(_items)})"] = mo.vstack(_blocks, gap=0.8)
+        _sections[f"{'Automatic checks: ' if _af else ''}{appkit.SEVERITY[_sev]['label']} ({len(_items)})"] = \
+            mo.vstack(_blocks, gap=0.8)
     checks_view = (mo.accordion(_sections, multiple=True, expanded=[k for k in _sections][:2]) if _sections
                    else mo.callout("Nothing was flagged.", kind="success"))
-    return check_open, checks_view
+    return check_open, checks_view, finding_open
 
 
 @app.cell(hide_code=True)
@@ -677,8 +699,9 @@ def _(area_view, areas_view, crumb_bar, file_view, mo):
 
 
 @app.cell(hide_code=True)
-def _(checks_view, get_tab, help_view, map_view, mo, set_tab, settings_view, structure_view, view):
-    _n = sum(1 for g in view["gaps"] if g["severity"] != "info")
+def _(appkit, checks_view, get_tab, help_view, map_view, mo, set_tab, settings_view, structure_view, view):
+    _n = (sum(1 for g in view["gaps"] if g["severity"] != "info")
+          + sum(1 for f, _ in appkit.all_findings(view) if f["severity"] != "info"))
     _names = {"Map": "Map", "Checks": f"Things to check ({_n})", "Structure": "What changed in the structure",
               "Settings": "Cost & settings", "Help": "Help"}
     _lookup = {v: k for k, v in _names.items()}

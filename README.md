@@ -42,6 +42,28 @@ The result opens on a summary in plain words, such as "This change touches 131 f
 
 Reviews are saved in `.pr-review/` inside your project, and the app reopens the last one automatically. That folder writes its own `.gitignore`, so it is never committed.
 
+## AI review with Claude Code
+
+The analysis decides where to look. A Claude Code skill does the reading. Install it once:
+
+```bash
+pr-review install-skill            # for you, in ~/.claude/skills
+pr-review install-skill --project  # or for everyone working in this repository
+```
+
+Then ask Claude Code something like "review this PR with pr-review", "review PR 1234", or "quick review of my branch against develop". The skill then works through these steps:
+
+1. Runs `pr-review analyze` at the rigor you asked for and tells you the size of the job.
+2. Runs `pr-review status` to find the close-read areas that no agent has reviewed yet. If the estimate is over 150k tokens, it asks before going on.
+3. Starts one reviewer subagent per area, up to five at a time. Each one pulls its own context with `pr-review pack <area>`, so diffs never fill your conversation. A pack holds the meaningful hunks, the old and new signature of every changed function, real call sites with the lines around them, and what static checks already flagged. Packs are capped at 40k tokens.
+4. Each reviewer saves structured findings with `pr-review findings add`. Every finding has a severity, a confidence, a `file:line` at the head commit, and a suggested fix. Bad input is rejected with a message the agent can act on.
+5. Looks across areas with `pr-review pack --cross`, for changes in one area that break another and for repeated or contradictory findings.
+6. Gives you a short summary: what to fix first, each item with `file:line`, and what wasn't read by an agent.
+
+Findings are written into `review.json`, so they also show up in the app, on the overview, in *Things to check* and on each file's page. When the author pushes new commits, re-run the review. Areas whose code didn't change keep their findings and cost nothing. Areas whose code did change are reviewed again, and their reviewer gets the earlier findings to re-check.
+
+The skill is read-only. It doesn't comment on GitHub, approve, push or commit unless you ask.
+
 ## The command line
 
 ```bash
@@ -53,6 +75,10 @@ pr-review summary --cluster c3 --json   # one area as JSON, without diffs (handy
 pr-review refine                        # the accurate usage search, see below
 pr-review retier --deep-score 40        # change the advice without re-running the analysis
 pr-review report                        # rebuild the shareable report.html
+pr-review fetch 1234                    # download GitHub PR #1234; prints a ref to pass as --head
+pr-review status                        # which areas still need an agent review
+pr-review pack c3                       # the context a reviewer needs for area c3
+pr-review findings add --area c3 f.json # save review findings
 ```
 
 `analyze` writes `review.json` (schema in `src/pr_review/schema/review.schema.json`) and `report.html`, a single offline page you can attach to a ticket. The app is the better place to review. The HTML file is for sharing a snapshot with someone who doesn't have the tool.
@@ -111,7 +137,7 @@ The tool reads code without running it. Connections made at run time are invisib
 
 ```bash
 pip install -e ".[dev,app]"
-pytest            # 46 tests, including a 134-file synthetic PR and a headless run of the app
+pytest            # 56 tests, including a 134-file synthetic PR and a headless run of the app
 ```
 
 ```
@@ -128,6 +154,9 @@ src/pr_review/
   cluster.py   areas
   app.py       the marimo app
   appkit.py    the app's wording, charts and saved progress
+  pack.py      context packs for reviewer agents
+  findings.py  storing findings and keeping them across re-analysis
+  skill/       the Claude Code skill (SKILL.md, reviewer.md)
   report.py    JSON and shareable HTML output
   cli.py       command line
 ```

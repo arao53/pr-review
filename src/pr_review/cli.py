@@ -106,6 +106,7 @@ def analyze(base, head, repo, out, coverage_xml, no_diffs, max_clusters, line_bu
         raise click.ClickException(str(exc)) from exc
 
     out_dir = Path(out) if out else _default_out(root, review)
+    kept = _carry_over(review, out_dir / "review.json")
     json_path, html_path = report.write(review, out_dir)
     state = root / STATE_DIR
     if out_dir.resolve().parent == state.resolve():
@@ -115,6 +116,8 @@ def analyze(base, head, repo, out, coverage_xml, no_diffs, max_clusters, line_bu
     if not quiet:
         click.echo(_summary_text(review, top=8))
         click.echo("")
+    if kept:
+        click.echo(f"Kept earlier agent findings for {kept} area(s) whose code is unchanged.")
     click.echo(f"review: {json_path}")
     click.echo(f"report: {html_path}")
     if open_browser:
@@ -221,6 +224,134 @@ def app(repo, port, edit):
     env = dict(os.environ, PR_REVIEW_REPO=str(Path(repo).resolve()))
     cmd = [sys.executable, "-m", "marimo", "edit" if edit else "run", str(notebook), "--port", str(port)]
     sys.exit(subprocess.call(cmd, env=env))
+
+
+def _carry_over(review: dict, previous: Path) -> int:
+    from pr_review import findings
+    if not previous.exists():
+        return 0
+    try:
+        return findings.carry_over(report.load(previous), review)
+    except (ValueError, KeyError, OSError):
+        return 0
+
+
+@main.command()
+@click.argument("area", required=False)
+@click.option("--cross", is_flag=True, help="What connects the areas, plus each area's findings so far.")
+@click.option("--review", "review_path", type=click.Path(exists=True), help="review.json or its directory. Default: latest.")
+@click.option("--max-tokens", type=click.IntRange(1000), help="Size cap for the pack. Default 40000.")
+@click.option("--context-callers", type=click.IntRange(0, 50), help=derive.KNOBS["context_callers"])
+def pack(area, cross, review_path, max_tokens, context_callers):
+    """Print everything a reviewer needs for one AREA (e.g. c3), as markdown."""
+    from pr_review import pack as pack_mod
+    review = report.load(_find_review(review_path))
+    if cross:
+        click.echo(pack_mod.build_cross(review))
+        return
+    if not area:
+        raise click.ClickException("name an area, like `pr-review pack c1`, or use --cross")
+    try:
+        p = pack_mod.build_pack(review, area, max_tokens=max_tokens, context_callers=context_callers)
+    except KeyError as exc:
+        raise click.ClickException(str(exc.args[0])) from exc
+    click.echo(p["text"])
+    note = f"[pack {area}: about {p['tokens']:,} tokens"
+    if p["dropped_diffs"]:
+        note += f"; diffs left out to fit: {', '.join(p['dropped_diffs'])}"
+    click.echo(note + "]", err=True)
+
+
+@main.command()
+@click.option("--review", "review_path", type=click.Path(exists=True), help="review.json or its directory. Default: latest.")
+@click.option("--json", "as_json", is_flag=True)
+def status(review_path, as_json):
+    """Which areas still need an agent review."""
+    from pr_review import findings
+    review = report.load(_find_review(review_path))
+    rows = findings.status(review)
+    if as_json:
+        click.echo(json.dumps({"review": str(_find_review(review_path)), "areas": rows,
+                               "budget": review.get("budget")}, indent=2))
+        return
+    todo = [r for r in rows if r["needs_review"]]
+    for r in rows:
+        mark = "done " if r["reviewed"] else ("stale" if r["stale"] else ("TODO " if r["needs_review"] else "  -  "))
+        click.echo(f"  {mark} {r['id']:>4}  {r['tier'] or '':<4}  ~{r['est_tokens']:>6,} tok  "
+                   f"{r['findings']:>2} findings  {r['name']}")
+    click.echo(f"{len(todo)} area(s) need review, about {sum(r['est_tokens'] for r in todo):,} tokens.")
+
+
+@main.group("findings")
+def findings_group():
+    """Store review findings in review.json."""
+
+
+@findings_group.command("add")
+@click.argument("source", type=click.File("r"), default="-")
+@click.option("--cluster", "--area", "area", help="Area the findings belong to. Leave out with --pr.")
+@click.option("--pr", "pr_level", is_flag=True, help="Findings about the whole pull request.")
+@click.option("--summary", help="Summary text for the area, or for the PR with --pr.")
+@click.option("--keep", is_flag=True, help="Add to earlier findings instead of replacing them.")
+@click.option("--review", "review_path", type=click.Path(exists=True), help="review.json or its directory. Default: latest.")
+def findings_add(source, area, pr_level, summary, keep, review_path):
+    """Add findings from SOURCE (a JSON file, or - for stdin).
+
+    SOURCE is a list of findings, or {"summary": "...", "findings": [...]}.
+    Each finding: severity (high, medium, low, info), title, and optionally
+    detail, file, line, confidence (high, medium, low), suggestion.
+    """
+    from pr_review import findings
+    if bool(area) == pr_level:
+        raise click.ClickException("pass either --area <id> or --pr")
+    raw = source.read().strip()
+    data = json.loads(raw) if raw else []
+    if isinstance(data, dict):
+        summary = summary if summary is not None else data.get("summary")
+        data = data.get("findings", [])
+    if not isinstance(data, list):
+        raise click.ClickException("expected a JSON list of findings, or an object with a 'findings' list")
+    path = _find_review(review_path)
+    review = report.load(path)
+    try:
+        res = findings.add(review, data, cluster=area, summary=summary, replace=not keep)
+    except findings.FindingError as exc:
+        raise click.ClickException(f"{exc}. Nothing was saved; fix it and run again.") from exc
+    report.write(review, path.parent)
+    msg = f"Saved {res['added']} finding(s) to {area or 'the PR'} ({res['total']} in total)"
+    click.echo(msg + (" and its summary." if summary else "."))
+
+
+@main.command()
+@click.argument("number", type=int)
+@click.option("--repo", default=".", type=click.Path(exists=True, file_okay=False))
+@click.option("--remote", default="origin", show_default=True)
+def fetch(number, repo, remote):
+    """Download GitHub pull request NUMBER without switching branches. Prints the ref to analyze."""
+    from pr_review import appkit
+    try:
+        ref = appkit.fetch_pull_request(gitutil.repo_root(repo), number, remote)
+    except gitutil.GitError as exc:
+        raise click.ClickException(f"could not download pull request #{number}: {exc}") from exc
+    click.echo(ref)
+
+
+@main.command("install-skill")
+@click.option("--project", is_flag=True, help="Install into this repository's .claude/skills instead of your home folder.")
+@click.option("--force", is_flag=True, help="Replace an existing copy.")
+def install_skill(project, force):
+    """Install the Claude Code skill that runs AI review area by area."""
+    import shutil
+    src = Path(__file__).with_name("skill")
+    base = gitutil.repo_root(Path.cwd()) / ".claude" if project else Path.home() / ".claude"
+    dest = base / "skills" / "pr-review"
+    if dest.exists() and not force:
+        raise click.ClickException(f"{dest} already exists; pass --force to replace it")
+    if dest.exists():
+        shutil.rmtree(dest)
+    shutil.copytree(src, dest, ignore=shutil.ignore_patterns("__pycache__"))
+    click.echo(f"Installed the pr-review skill to {dest}")
+    click.echo("In Claude Code, ask for example: \"review this PR with pr-review\".")
 
 
 @main.command("schema")

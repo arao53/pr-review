@@ -255,8 +255,16 @@ def review_dir(repo: Path, review: dict) -> Path:
     return Path(repo) / STATE_DIR / _slug(name)
 
 
-def save(review: dict, repo: Path) -> Path:
+def save(review: dict, repo: Path, fresh: bool = False) -> Path:
+    """Write the review. fresh=True means it came from a new analysis, so
+    earlier agent findings are carried over where the code is unchanged."""
     d = review_dir(repo, review)
+    if fresh and (d / "review.json").exists():
+        from pr_review import findings
+        try:
+            findings.carry_over(report.load(d / "review.json"), review)
+        except (ValueError, KeyError, OSError):
+            pass
     report.write(review, d)
     state = Path(repo) / STATE_DIR
     (state / ".gitignore").write_text("*\n")
@@ -509,3 +517,31 @@ def claude_prompt(review: dict, cluster: dict | None = None, file: dict | None =
                 "file:line references, how sure you are, and what to do about each.")
     return (f"Please review this pull request using {path}. Start with the areas marked 'deep', in order, "
             "and report problems with file:line references.")
+
+
+# ---------------------------------------------------------------- agent findings
+
+FINDING_KIND = {"high": "danger", "medium": "warn", "low": "neutral", "info": "info"}
+
+
+def all_findings(review: dict) -> list[tuple[dict, str | None]]:
+    """(finding, area id) for the PR and every area, most severe first."""
+    from pr_review.derive import SEVERITY_ORDER
+    out = [(f, None) for f in review.get("findings", [])]
+    for c in review["clusters"]:
+        out += [(f, c["id"]) for f in c.get("findings", [])]
+    return sorted(out, key=lambda x: (SEVERITY_ORDER[x[0]["severity"]], x[0].get("file") or "", x[0].get("line") or 0))
+
+
+def finding_md(f: dict, with_where: bool = True) -> str:
+    where = ""
+    if with_where and f.get("file"):
+        where = f"<br><span class='pr-muted'>at <code>{html.escape(f['file'])}{':' + str(f['line']) if f.get('line') else ''}</code></span>"
+    sure = {"high": "checked in the code", "medium": "likely", "low": "a guess worth a look"}.get(f.get("confidence"), "")
+    body = f"**{html.escape(f['title'])}**"
+    if f.get("detail"):
+        body += f"  \n{html.escape(f['detail'])}"
+    if f.get("suggestion"):
+        body += f"  \n*What to do:* {html.escape(f['suggestion'])}"
+    meta = f"{SEVERITY[f['severity']]['label']}" + (f" · {sure}" if sure else "") + " · from AI review"
+    return f"{body}  \n<span class='pr-muted'>{meta}</span>{where}"

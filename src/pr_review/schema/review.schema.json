@@ -78,6 +78,9 @@
         },
         "options": {
           "type": "object"
+        },
+        "reviewed_at": {
+          "type": "string"
         }
       }
     },
@@ -836,6 +839,49 @@
         },
         "has_high": {
           "type": "boolean"
+        },
+        "review": {
+          "type": "object",
+          "description": "set when an agent reviewed this area; hash is the area's content at that time",
+          "required": [
+            "hash",
+            "at"
+          ],
+          "properties": {
+            "hash": {
+              "type": "string"
+            },
+            "at": {
+              "type": "string"
+            }
+          }
+        },
+        "previous": {
+          "type": "object",
+          "description": "an earlier review of this area's older code, to re-check",
+          "properties": {
+            "findings": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/finding"
+              }
+            },
+            "summary": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "at": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "overlap": {
+              "type": "number"
+            }
+          }
         }
       }
     },
@@ -932,6 +978,9 @@
           ]
         },
         "source": {
+          "type": "string"
+        },
+        "suggestion": {
           "type": "string"
         }
       }
