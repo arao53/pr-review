@@ -24,7 +24,7 @@ From inside your project folder:
 pr-review app
 ```
 
-Your browser opens on a page with two steps:
+It serves on port 2718, or the next free port if that one is taken (for example by another app window still running), and prints the address. Your browser opens on a page with two steps:
 
 1. **What do you want to review?** Pick the version with the changes and the version it will be merged into, from lists of your project's branches. For a GitHub pull request that isn't on your computer yet, type its number and press **Download it**. You don't need any git commands.
 2. **How careful should the review be?** Pick *Quick*, *Standard* or *Thorough*, then press **Analyze this change**.

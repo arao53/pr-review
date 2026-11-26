@@ -14,6 +14,26 @@ from pr_review import __version__, derive, gitutil, report
 from pr_review.analyze import analyze as run_analysis
 
 STATE_DIR = ".pr-review"
+APP_PORT = 2718
+PORT_TRIES = 30
+
+
+def port_is_free(port: int, host: str = "127.0.0.1") -> bool:
+    import socket
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        try:
+            s.bind((host, port))
+        except OSError:
+            return False
+    return True
+
+
+def free_port(start: int, tries: int = PORT_TRIES) -> int | None:
+    """The first port from `start` that nothing is listening on."""
+    for port in range(start, start + tries):
+        if port_is_free(port):
+            return port
+    return None
 
 
 def _slug(text: str) -> str:
@@ -210,7 +230,8 @@ def retier(review_path, rigor, deep_score, skip_score, token_budget, context_cal
 
 @main.command()
 @click.option("--repo", default=".", type=click.Path(exists=True, file_okay=False), help="Folder of the project to review.")
-@click.option("--port", default=2718, show_default=True)
+@click.option("--port", type=click.IntRange(1, 65535),
+              help=f"Port to serve on. Default: the first free one from {APP_PORT}.")
 @click.option("--edit", is_flag=True, help="Open the notebook in edit mode instead of as an app.")
 def app(repo, port, edit):
     """Open the point-and-click review app in your browser."""
@@ -220,6 +241,18 @@ def app(repo, port, edit):
         import marimo  # noqa: F401
     except ImportError as exc:
         raise click.ClickException("The app needs marimo. Install it with: pip install 'pr-review[app]'") from exc
+    if port is None:
+        port = free_port(APP_PORT)
+        if port is None:
+            raise click.ClickException(f"ports {APP_PORT} to {APP_PORT + PORT_TRIES - 1} are all in use; "
+                                       "pass --port with a free one")
+        if port != APP_PORT:
+            click.echo(f"Port {APP_PORT} is in use (probably another pr-review or marimo window), so using {port}.")
+    elif not port_is_free(port):
+        raise click.ClickException(
+            f"port {port} is already in use, probably by another pr-review or marimo window. "
+            f"Close that window's terminal, run `lsof -ti :{port} | xargs kill`, or leave out --port "
+            "to pick a free port automatically.")
     notebook = Path(__file__).with_name("app.py")
     env = dict(os.environ, PR_REVIEW_REPO=str(Path(repo).resolve()))
     cmd = [sys.executable, "-m", "marimo", "edit" if edit else "run", str(notebook), "--port", str(port)]
