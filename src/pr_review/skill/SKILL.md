@@ -13,9 +13,10 @@ Keep diffs out of the main conversation. `/code-review` runs in its own subagent
 
 1. Check the tool is installed: `pr-review --version`. If it isn't, ask the user before installing, then run `pipx install "pr-review[app] @ git+https://github.com/arao53/pr-review"` (or `pip install` into their environment if they prefer).
 2. Work out what to compare, in this order:
-   - The user named a PR number: `pr-review fetch <number>` prints a ref such as `refs/pr-review/pr-123`. Use it as `--head`. This doesn't switch the user's branch.
+   - The user named a PR number: `pr-review fetch <number>` prints a ref such as `pr-review/pr-123`. Use it as `--head`. This doesn't switch the user's branch.
    - The user named branches: use them.
-   - Otherwise: head is the current branch and base is the tool's default (origin/HEAD, then main or master). Say which you picked in one line.
+   - Otherwise: head is the current branch and base is the tool's default (the `upstream` remote's default branch in a fork, else origin's, then main or master). Say which you picked in one line.
+   - If `analyze` reports 0 changed files, the two versions have the same code. Usually the head is `main` or a stale local copy of the branch. Check with `git log --oneline -1 <head>` against the PR and fetch the PR by number rather than continuing.
 3. Pick the rigor from what the user said. "Quick look", "skim" or "just the big risks" means `quick`. "Careful", "thorough" or "before release" means `thorough`. Otherwise use `standard`.
 
 ## 2. Analyze

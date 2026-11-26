@@ -1,6 +1,6 @@
 """pr-review: triage, cluster and map large Python pull requests."""
 
-__version__ = "0.4.0"
+__version__ = "0.4.1"
 SCHEMA_VERSION = "1"
 
 from pr_review.analyze import analyze  # noqa: E402

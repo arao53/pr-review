@@ -75,7 +75,8 @@ def _(appkit, derive, get_fetched, mo, repo, saved, versions):
         _label = {v: k for k, v in _opts.items()}
         _first = next(iter(_opts))
         head_pick = mo.ui.dropdown(
-            _opts, value=_label.get(get_fetched()) or _label.get(versions["current"]) or _first,
+            _opts, value=_label.get(get_fetched()) or _label.get(versions["suggested_head"])
+            or _label.get(versions["current"]) or _first,
             label="Version with the changes", searchable=True, full_width=True)
         base_pick = mo.ui.dropdown(
             _opts, value=_label.get(versions["default_base"]) or _first,
@@ -93,8 +94,8 @@ def _(appkit, derive, get_fetched, mo, repo, saved, versions):
 
 
 @app.cell(hide_code=True)
-def _(analyze_btn, base_pick, fetch_btn, folder, get_review, head_pick, mo, open_btn, pr_number, repo, rigor_pick,
-      saved_pick):
+def _(analyze_btn, appkit, base_pick, fetch_btn, folder, get_review, head_pick, mo, open_btn, pr_number, repo,
+      rigor_pick, saved_pick):
     if repo is None:
         _body = [folder, mo.callout(mo.md(
             "This folder isn't a project tracked by git. Paste the path of the folder that holds the code, "
@@ -103,11 +104,13 @@ def _(analyze_btn, base_pick, fetch_btn, folder, get_review, head_pick, mo, open
         _body = [folder, mo.callout(mo.md("This project has no saved versions yet, so there is nothing to compare."),
                                     kind="warn")]
     else:
+        _same = appkit.explain_same(repo, base_pick.value, head_pick.value)
         _body = [
             folder,
             mo.md("### 1. What do you want to review?"),
             mo.hstack([head_pick, mo.md("<div style='padding-top:28px;color:#8a9aa9'>→</div>"), base_pick],
                       widths=[10, 1, 10], align="start"),
+            *([mo.callout(mo.md(_same), kind="warn")] if _same else []),
             mo.accordion({"Reviewing a GitHub pull request that isn't on your computer yet?": mo.vstack([
                 mo.md("Type its number (the digits after `/pull/` in its web address) and press **Download it**. "
                       "It will then appear in the list above."),
@@ -139,11 +142,14 @@ def _(appkit, fetch_btn, mo, pr_number, repo, set_fetched):
             with mo.status.spinner(title=f"Downloading pull request #{_raw}"):
                 _ref = appkit.fetch_pull_request(repo, int(_raw))
             set_fetched(_ref)
-            _out = mo.callout(mo.md(f"Pull request #{_raw} is ready. It's now selected above."), kind="success")
+            _out = mo.callout(mo.md(f"Pull request #{_raw} is downloaded and selected as the version with the "
+                                    "changes. Press **Analyze this change**."), kind="success")
         except Exception as _e:
             _out = mo.callout(mo.md(
                 f"Couldn't download pull request #{_raw}. Check the number, and that this project came from GitHub "
-                f"and you are signed in.\n\n<small>Details: {_e}</small>"), kind="danger")
+                "and you can reach it. If this folder is a copy of your fork, the pull request lives on the original "
+                "project: add it with `git remote add upstream <its address>` and try again."
+                f"\n\n<small>Details: {_e}</small>"), kind="danger")
     _out
     return
 
@@ -155,6 +161,8 @@ def _(analyze_btn, appkit, base_pick, derive, go, head_pick, mo, repo, repo_conf
     if head_pick.value == base_pick.value:
         _out = mo.callout(mo.md("Pick two different versions: the one with the changes, and the one it goes into."),
                           kind="warn")
+    elif appkit.explain_same(repo, base_pick.value, head_pick.value):
+        _out = mo.callout(mo.md(appkit.explain_same(repo, base_pick.value, head_pick.value)), kind="warn")
     else:
         try:
             with mo.status.spinner(title="Analyzing the change", subtitle="Getting started") as _sp:
@@ -162,8 +170,9 @@ def _(analyze_btn, appkit, base_pick, derive, go, head_pick, mo, repo, repo_conf
                 _r = run_analysis(repo, base=base_pick.value, head=head_pick.value, options=_opts,
                                   progress=lambda m: _sp.update(subtitle=m))
             if not _r["stats"]["files_changed"]:
-                _out = mo.callout(mo.md("These two versions have the same code, so there is nothing to review. "
-                                        "Check that you picked the right versions."), kind="warn")
+                _out = mo.callout(mo.md(
+                    appkit.explain_same(repo, base_pick.value, head_pick.value)
+                    or "These two versions have the same code, so there is nothing to review."), kind="warn")
             else:
                 appkit.save(_r, repo, fresh=True)
                 set_review(_r)
@@ -189,9 +198,13 @@ def _(Path, appkit, get_review, go, mo, open_btn, saved, saved_pick, set_review)
 
 @app.cell(hide_code=True)
 def _(get_review, mo):
-    review = get_review()
-    mo.stop(review is None, mo.callout(mo.md(
+    # Assign only after the check: if `review` were set to None here, a later
+    # re-run of a step that also depends on something else (like the project
+    # folder) would see None instead of being skipped.
+    _loaded = get_review()
+    mo.stop(_loaded is None, mo.callout(mo.md(
         "Pick the two versions above and press **Analyze this change**."), kind="info"))
+    review = _loaded
     return (review,)
 
 

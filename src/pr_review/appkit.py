@@ -219,31 +219,87 @@ def find_repo(path: str | Path) -> Path | None:
 
 
 def list_versions(repo: Path) -> dict:
-    """Branches, newest first, plus the one that is checked out."""
-    out = _git(repo, "for-each-ref", "--sort=-committerdate", "--format=%(refname:short)\t%(committerdate:relative)",
+    """Branches, newest first, the one that is checked out, a sensible base,
+    and a suggested head that actually differs from that base."""
+    out = _git(repo, "for-each-ref", "--sort=-committerdate",
+               "--format=%(refname:short)\t%(committerdate:relative)\t%(objectname)",
                "refs/heads", "refs/remotes", "refs/pr-review")
-    refs = []
+    refs, sha = [], {}
     for line in out.splitlines():
-        name, _, when = line.partition("\t")
-        if name.endswith("/HEAD") or name == "origin":
+        name, when, obj = (line.split("\t") + ["", ""])[:3]
+        if name.endswith("/HEAD") or "/" not in name and name in _remotes(repo):
             continue
         refs.append((name, when))
+        sha[name] = obj
     try:
         default = gitutil.default_base(repo)
     except gitutil.GitError:
         default = refs[0][0] if refs else None
-    return {"current": gitutil.current_branch(repo), "refs": refs, "default_base": default}
+    current = gitutil.current_branch(repo)
+    base_sha = sha.get(default) or (gitutil.try_rev_parse(repo, default) if default else None)
+
+    def differs(name):
+        return name != default and sha.get(name) != base_sha
+
+    # A downloaded pull request first, then the checked-out branch, then the
+    # most recently updated branch with different code.
+    names = [n for n, _ in refs]
+    pr_refs = [n for n in names if n.startswith("pr-review/")]
+    suggested = next((n for n in pr_refs if differs(n)), None)
+    if suggested is None and current and differs(current):
+        suggested = current
+    if suggested is None:
+        suggested = next((n for n in names if differs(n)), current or (names[0] if names else None))
+    return {"current": current, "refs": refs, "default_base": default, "suggested_head": suggested, "sha": sha}
 
 
-def fetch_pull_request(repo: Path, number: int, remote: str = "origin") -> str:
-    """Download a GitHub pull request without switching branches."""
+def _remotes(repo: Path) -> set[str]:
+    return set(_git(repo, "remote").split())
+
+
+def fetch_pull_request(repo: Path, number: int, remote: str | None = None) -> str:
+    """Download a GitHub pull request without switching branches. Returns the
+    short ref name the version list uses.
+
+    GitHub keeps pull requests on the repository they were opened against,
+    so in a fork the `upstream` remote is tried before `origin`."""
     ref = f"refs/pr-review/pr-{number}"
-    _git(repo, "fetch", "--quiet", remote, f"+pull/{number}/head:{ref}", timeout=180)
-    return ref
+    remotes = [remote] if remote else sorted(_remotes(repo), key=lambda r: {"upstream": 0, "origin": 1}.get(r, 2))
+    errors = []
+    for r in remotes:
+        try:
+            _git(repo, "fetch", "--quiet", r, f"+pull/{number}/head:{ref}", timeout=180)
+            return ref[len("refs/"):]
+        except gitutil.GitError as exc:
+            errors.append(f"{r}: {str(exc).splitlines()[-1] if str(exc) else exc}")
+    raise gitutil.GitError("; ".join(errors) or "this project has no remote to download from")
+
+
+def explain_same(repo: Path, base: str, head: str) -> str | None:
+    """Why comparing these two versions would show no changes, in plain
+    words, or None when there is something to review."""
+    b, h = gitutil.try_rev_parse(repo, base), gitutil.try_rev_parse(repo, head)
+    if not b or not h:
+        return None
+    lb, lh = ref_label(base), ref_label(head)
+    if b == h:
+        return (f"**{lh}** and **{lb}** are the same version (commit `{h[:7]}`), so there is nothing to compare. "
+                "Pick the version that has the pull request's changes as the first one.")
+    try:
+        mb = gitutil.merge_base(repo, b, h)
+    except gitutil.GitError:
+        return None
+    if mb == h:
+        return (f"Everything in **{lh}** is already in **{lb}**. It was probably merged already, or it is an "
+                "old copy of the branch. If you're reviewing a pull request, download it by number below "
+                "to get its latest version.")
+    if not _git(repo, "diff", "--name-only", mb, h).strip():
+        return f"**{lh}** has new commits, but they don't change any files compared with **{lb}**."
+    return None
 
 
 def ref_label(ref: str) -> str:
-    m = re.match(r"refs/pr-review/pr-(\d+)$", ref) or re.match(r"pr-review/pr-(\d+)$", ref)
+    m = re.match(r"(?:refs/)?pr-review/pr-(\d+)$", ref or "")
     return f"Pull request #{m.group(1)}" if m else ref
 
 

@@ -1,3 +1,4 @@
+import pytest
 import json
 
 from click.testing import CliRunner
@@ -123,3 +124,27 @@ def test_api_compatibility():
     assert not change("def f(a, *, k=1): pass", "def f(a): pass")
     assert change("class C(Base): pass", "class C(Base[int]): pass")
     assert not change("class C(Base): pass", "class C(Other): pass")
+
+
+def test_app_port_falls_back_when_taken():
+    import socket
+
+    from pr_review.cli import free_port, port_is_free
+    with socket.socket() as s:
+        s.bind(("127.0.0.1", 0))
+        s.listen()
+        taken = s.getsockname()[1]
+        assert not port_is_free(taken)
+        assert free_port(taken) not in (None, taken)
+    assert free_port(taken, tries=1) in (taken, None)
+
+
+def test_app_rejects_busy_port_with_help(monkeypatch):
+    import socket
+
+    pytest.importorskip("marimo")
+    with socket.socket() as s:
+        s.bind(("127.0.0.1", 0))
+        s.listen()
+        res = CliRunner().invoke(main, ["app", "--port", str(s.getsockname()[1])])
+    assert res.exit_code != 0 and "already in use" in res.output and "lsof" in res.output
