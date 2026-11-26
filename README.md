@@ -81,7 +81,7 @@ pr-review findings import --areas "$(pr-review plan --json | jq -r '[.areas[].id
 ## The command line
 
 ```bash
-pr-review analyze                       # base defaults to origin/HEAD, then main or master
+pr-review analyze                       # base: upstream's default branch in a fork, else origin's, then main or master
 pr-review analyze --base develop --rigor thorough
 pr-review analyze --coverage coverage.xml   # also flag changed lines that no test runs
 pr-review summary                       # text summary of the latest review
@@ -89,7 +89,7 @@ pr-review summary --cluster c3 --json   # one area as JSON, without diffs (handy
 pr-review refine                        # the accurate usage search, see below
 pr-review retier --deep-score 40        # change the advice without re-running the analysis
 pr-review report                        # rebuild the shareable report.html
-pr-review fetch 1234                    # download GitHub PR #1234; prints a ref to pass as --head
+pr-review fetch 1234                    # download GitHub PR #1234 (from upstream first, in a fork); prints a ref for --head
 pr-review status                        # which areas still need an agent review
 pr-review plan                          # the /code-review command(s) to run next
 pr-review findings import out.json      # save /code-review output, routed to areas

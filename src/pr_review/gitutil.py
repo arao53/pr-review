@@ -54,12 +54,16 @@ def current_branch(root: Path) -> str | None:
 
 
 def default_base(root: Path) -> str:
-    """Pick the branch a PR would usually target: origin/HEAD, then main/master."""
+    """Pick the branch a PR would usually target. In a fork, PRs go into the
+    upstream repository, so its default branch comes first; then origin's,
+    then main or master."""
     candidates = []
-    origin_head = git_text(root, "symbolic-ref", "--quiet", "--short", "refs/remotes/origin/HEAD", check=False).strip()
-    if origin_head:
-        candidates.append(origin_head)
-    candidates += ["origin/main", "origin/master", "main", "master"]
+    for remote in ("upstream", "origin"):
+        head = git_text(root, "symbolic-ref", "--quiet", "--short", f"refs/remotes/{remote}/HEAD", check=False).strip()
+        if head:
+            candidates.append(head)
+        candidates += [f"{remote}/main", f"{remote}/master"]
+    candidates += ["main", "master"]
     for ref in candidates:
         if try_rev_parse(root, ref):
             return ref
